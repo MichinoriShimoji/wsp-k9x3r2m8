@@ -9,3 +9,5 @@ encrypt.py
 decrypt.py
 reencrypt.py
 payload.b64
+sync_from_remote.py
+.token_stash
