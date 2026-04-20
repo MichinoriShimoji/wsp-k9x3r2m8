@@ -1,0 +1,7 @@
+.DS_Store
+*.pdf
+*.mp4
+*.mov
+*_plain.html
+decrypt.py
+reencrypt.py
