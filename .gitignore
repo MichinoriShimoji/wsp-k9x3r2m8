@@ -5,7 +5,9 @@
 *_plain.html
 *_plain_backup.html
 index_plain_backup.html
+index_landing_plain.html
 encrypt.py
+encrypt_pages.py
 decrypt.py
 reencrypt.py
 payload.b64
