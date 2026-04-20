@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>作業スペース</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Noto Sans JP",sans-serif; background:#faf9f7; color:#1a1a2e; line-height:1.9; font-size:16px; }
+
+  /* パスワード画面 */
+  #password-screen { position:fixed; inset:0; background:#1a1a2e; display:flex; align-items:center; justify-content:center; z-index:1000; padding:24px; }
+  #password-screen.hidden { display:none; }
+  .pw-box { background:#fff; border-radius:12px; padding:40px; max-width:420px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,0.3); }
+  .pw-box h1 { font-family:"Noto Serif JP",serif; font-size:18px; margin-bottom:8px; color:#1a1a2e; }
+  .pw-box p { font-size:13px; color:#666; margin-bottom:20px; line-height:1.8; }
+  .pw-box input { width:100%; padding:12px 16px; font-size:15px; border:2px solid #ddd; border-radius:6px; font-family:"Noto Sans JP",sans-serif; outline:none; transition:border-color 0.2s; }
+  .pw-box input:focus { border-color:#c0392b; }
+  .pw-box button { width:100%; margin-top:12px; padding:12px; background:#c0392b; color:#fff; border:none; border-radius:6px; font-size:14px; font-weight:500; cursor:pointer; font-family:"Noto Sans JP",sans-serif; }
+  .pw-box button:hover { background:#a62f24; }
+  .pw-box button:disabled { background:#999; cursor:not-allowed; }
+  .pw-error { color:#c0392b; font-size:12px; margin-top:10px; display:none; }
+  .pw-error.show { display:block; }
+  .pw-status { font-size:12px; color:#888; margin-top:10px; text-align:center; }
+  .pw-encrypt-badge { display:inline-block; background:#1a1a2e; color:#d89a3a; padding:3px 10px; border-radius:12px; font-size:10px; letter-spacing:0.1em; margin-bottom:16px; font-weight:700; }
+
+  /* 読み込み中 */
+  .spinner { display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* 通知 */
+  .notification { position:fixed; bottom:20px; right:20px; background:#1a1a2e; color:#f8f5f0; padding:12px 18px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.2); font-size:12.5px; z-index:200; opacity:0; transform:translateY(20px); transition:all 0.3s; pointer-events:none; }
+  .notification.show { opacity:1; transform:translateY(0); }
+</style>
+<!-- 本体のスタイルは復号後にDOMに注入される。基本レイアウト用のスタイルのみ下記に別途定義 -->
+<style id="app-styles">
+  /* ツールバー */
+  .toolbar { position:fixed; top:0; left:0; right:0; z-index:100; background:#1a1a2e; color:#f8f5f0; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 8px rgba(0,0,0,0.15); flex-wrap:wrap; gap:10px; }
+  .toolbar-left { font-size:12px; color:rgba(248,245,240,0.7); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .toolbar-left .edit-indicator { display:inline-block; width:8px; height:8px; border-radius:50%; background:#6abf6a; animation:pulse 2s infinite; }
+  .toolbar-left .lock-icon { color:#d89a3a; font-size:11px; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .toolbar-left .comment-count { background:#c0392b; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+  .toolbar-right { display:flex; gap:8px; flex-wrap:wrap; }
+  .toolbar button { background:#c0392b; color:#fff; border:none; padding:7px 14px; border-radius:4px; font-family:"Noto Sans JP",sans-serif; font-size:12px; font-weight:500; cursor:pointer; transition:background 0.2s; }
+  .toolbar button:hover { background:#a62f24; }
+  .toolbar button.secondary { background:rgba(248,245,240,0.15); color:#f8f5f0; }
+  .toolbar button.secondary:hover { background:rgba(248,245,240,0.25); }
+  .user-select { background:rgba(248,245,240,0.1); color:#f8f5f0; border:1px solid rgba(248,245,240,0.3); padding:6px 10px; border-radius:4px; font-family:"Noto Sans JP",sans-serif; font-size:12px; cursor:pointer; }
+  .user-select option { background:#1a1a2e; }
+
+  .layout { display:grid; grid-template-columns:260px 1fr; min-height:100vh; padding-top:52px; }
+
+  .sidebar { position:fixed; top:52px; bottom:0; left:0; width:260px; background:#fff; border-right:1px solid #e5e0d8; overflow-y:auto; padding:20px 0; z-index:50; }
+  .sidebar-title { font-family:"Noto Serif JP",serif; font-size:13px; font-weight:700; color:#1a1a2e; padding:0 20px 10px; border-bottom:1px solid #eee; margin-bottom:10px; }
+  .sidebar-section { font-family:"Noto Serif JP",serif; font-size:11px; font-weight:700; color:#c0392b; padding:14px 20px 6px; letter-spacing:0.1em; }
+  .sidebar-item { display:flex; align-items:center; gap:8px; padding:7px 20px; font-size:13px; color:#444; cursor:pointer; border-left:3px solid transparent; transition:all 0.15s; line-height:1.5; }
+  .sidebar-item:hover { background:#faf7f3; color:#1a1a2e; }
+  .sidebar-item.active { background:#fef3f2; border-left-color:#c0392b; color:#1a1a2e; font-weight:500; }
+  .sidebar-item.column { padding-left:32px; font-size:12px; color:#6a4e32; background:#fef7ea; }
+  .sidebar-item.column:hover { background:#fdefd5; }
+  .sidebar-item.column.active { background:#fde5c0; border-left-color:#d89a3a; }
+  .sidebar-item .label { font-family:"Noto Serif JP",serif; font-size:11px; font-weight:700; color:#c0392b; min-width:42px; }
+  .sidebar-item.column .label { color:#a96e18; font-family:"Noto Sans JP",sans-serif; font-size:10px; min-width:36px; }
+  .sidebar-item .ttl { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sidebar-item .comment-badge { background:#c0392b; color:#fff; font-size:9px; padding:1px 5px; border-radius:8px; font-weight:700; min-width:16px; text-align:center; }
+
+  .main { grid-column:2; padding:0; }
+  .header { background:#1a1a2e; color:#f8f5f0; padding:36px 40px; }
+  .header-inner { max-width:820px; margin:0 auto; }
+  .header h1 { font-family:"Noto Serif JP",serif; font-size:24px; font-weight:700; margin-bottom:6px; line-height:1.4; }
+  .header .subtitle { font-size:12px; color:rgba(248,245,240,0.6); }
+  .container { max-width:820px; margin:0 auto; padding:36px 24px 80px; }
+
+  [contenteditable="true"] { outline:none; transition:background 0.15s, box-shadow 0.15s; border-radius:3px; }
+  [contenteditable="true"]:hover { background:rgba(192,57,43,0.05); }
+  [contenteditable="true"]:focus { background:rgba(192,57,43,0.08); box-shadow:0 0 0 2px rgba(192,57,43,0.3); padding:2px 4px; margin:-2px -4px; }
+
+  .spec-box { background:#fff; border-radius:10px; padding:26px 30px; margin-bottom:28px; box-shadow:0 1px 6px rgba(0,0,0,0.06); position:relative; }
+  .spec-box h2 { font-family:"Noto Serif JP",serif; font-size:16px; font-weight:700; margin-bottom:16px; color:#1a1a2e; padding-bottom:10px; border-bottom:1px solid #eee; }
+  .spec-grid { display:grid; grid-template-columns:120px 1fr; gap:10px 18px; font-size:13.5px; }
+  .spec-grid dt { font-weight:700; color:#c0392b; }
+  .spec-grid dd { color:#333; line-height:1.85; }
+
+  .toc-box { background:#fff; border-radius:10px; padding:26px 30px; margin-bottom:28px; box-shadow:0 1px 6px rgba(0,0,0,0.06); }
+  .toc-box h2 { font-family:"Noto Serif JP",serif; font-size:16px; font-weight:700; margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid #eee; }
+  .toc-row { display:flex; align-items:baseline; gap:10px; padding:8px 0; border-bottom:1px dashed #eee; font-size:13.5px; }
+  .toc-row:last-child { border-bottom:none; }
+  .toc-row.column { padding-left:22px; background:#fef7ea; padding-right:10px; margin:3px -10px; border-bottom:1px solid #f5e8d0; font-size:13px; color:#6a4e32; border-radius:4px; }
+  .toc-row.column:last-child { border-bottom:none; }
+  .toc-label { min-width:62px; font-family:"Noto Serif JP",serif; font-size:11px; font-weight:700; color:#c0392b; letter-spacing:0.1em; }
+  .toc-row.column .toc-label { color:#a96e18; font-family:"Noto Sans JP",sans-serif; font-size:10px; }
+  .toc-title { flex:1; color:#1a1a2e; line-height:1.6; }
+  .toc-row.column .toc-title { color:#5a4014; }
+  .toc-pages { font-size:11px; color:#888; background:#f5f2ee; padding:2px 7px; border-radius:3px; min-width:44px; text-align:center; }
+  .toc-row.column .toc-pages { background:#fff; color:#a96e18; }
+
+  .section-title { font-family:"Noto Serif JP",serif; font-size:19px; font-weight:700; margin:44px 0 18px; padding-bottom:10px; border-bottom:2px solid #c0392b; }
+
+  .chapter-card, .column-card { position:relative; scroll-margin-top:72px; }
+  .chapter-card { background:#fff; border-radius:8px; padding:22px 26px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.05); }
+  .chapter-card.highlight { border-left:4px solid #c0392b; }
+  .chapter-card.mine { border-left:4px solid #5a7a9f; }
+  .chapter-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; flex-wrap:wrap; gap:8px; }
+  .chapter-num { font-family:"Noto Serif JP",serif; font-size:11px; font-weight:700; color:#c0392b; letter-spacing:0.15em; }
+  .chapter-num .badge { font-family:"Noto Sans JP",sans-serif; font-size:10px; padding:2px 7px; background:#c0392b; color:#fff; border-radius:3px; letter-spacing:0.1em; margin-left:6px; }
+  .chapter-num .badge.mine-badge { background:#5a7a9f; }
+  .chapter-pages { font-size:11px; color:#888; background:#f5f2ee; padding:3px 9px; border-radius:3px; font-weight:500; }
+  .chapter-title { font-family:"Noto Serif JP",serif; font-size:17px; font-weight:700; margin-bottom:5px; line-height:1.5; }
+  .chapter-subtitle { font-size:12.5px; color:#666; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed #e0dcd4; line-height:1.75; }
+  .chapter-content { font-size:13px; line-height:1.85; color:#333; }
+  .chapter-content ul { margin-left:16px; margin-top:4px; }
+  .chapter-content li { margin:3px 0; }
+  .chapter-content strong { color:#1a1a2e; }
+
+  .column-card { background:#fef7ea; border-left:4px solid #d89a3a; border-radius:8px; padding:22px 26px; margin-bottom:14px; }
+  .column-card .column-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; gap:8px; flex-wrap:wrap; }
+  .column-card .column-label { font-family:"Noto Serif JP",serif; font-size:10px; font-weight:700; color:#a96e18; letter-spacing:0.15em; }
+  .column-card .column-label .column-num { background:#d89a3a; color:#fff; font-family:"Noto Sans JP",sans-serif; font-size:10px; padding:2px 6px; border-radius:3px; margin-right:6px; }
+  .column-card .column-pages { font-size:11px; color:#a96e18; background:#fff; padding:3px 9px; border-radius:3px; font-weight:500; }
+  .column-card .column-title { font-family:"Noto Serif JP",serif; font-size:16px; font-weight:700; margin-bottom:5px; color:#5a4014; }
+  .column-card .column-subtitle { font-size:12.5px; color:#8a6a3a; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed #d89a3a; font-style:italic; line-height:1.75; }
+  .column-card .column-content { font-size:13px; line-height:1.85; color:#3a2a14; }
+  .column-card .column-content ul { margin-left:16px; margin-top:4px; }
+  .column-card .column-content li { margin:3px 0; }
+  .column-card .column-content strong { color:#a96e18; }
+
+  .card-actions { position:absolute; top:8px; right:8px; display:flex; gap:4px; opacity:0; transition:opacity 0.2s; }
+  .chapter-card:hover .card-actions, .column-card:hover .card-actions { opacity:1; }
+  .card-actions button { background:rgba(192,57,43,0.8); color:#fff; border:none; width:24px; height:24px; border-radius:4px; cursor:pointer; font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center; }
+  .card-actions button:hover { background:#c0392b; }
+  .card-actions button.duplicate { background:rgba(90,122,159,0.8); }
+  .card-actions button.duplicate:hover { background:#5a7a9f; }
+
+  .comments-section { margin-top:14px; padding-top:12px; border-top:1px dashed rgba(0,0,0,0.1); }
+  .comment-toggle { display:inline-flex; align-items:center; gap:6px; background:transparent; border:1px solid rgba(192,57,43,0.3); color:#c0392b; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; font-family:"Noto Sans JP",sans-serif; transition:all 0.15s; }
+  .comment-toggle:hover { background:#fef3f2; }
+  .comment-toggle.has-comments { background:#fef3f2; font-weight:500; }
+  .comment-toggle .cmt-icon { font-size:12px; }
+  .comment-toggle .cmt-count { background:#c0392b; color:#fff; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:700; }
+  .comment-toggle .cmt-unresolved { background:#e8a437; color:#fff; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:700; }
+
+  .comments-list { margin-top:12px; display:none; }
+  .comments-list.open { display:block; }
+  .comment-item { background:#f7f5f1; border-left:3px solid #5a7a9f; border-radius:4px; padding:10px 14px; margin-bottom:8px; font-size:12.5px; }
+  .comment-item.resolved { opacity:0.5; border-left-color:#8a9a8a; }
+  .comment-item.by-shimoji { border-left-color:#c0392b; background:#fef5f3; }
+  .comment-item.by-editor { border-left-color:#5a7a9f; background:#eef2f7; }
+  .comment-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:11px; color:#888; }
+  .comment-meta .cmt-author { font-weight:700; color:#333; }
+  .comment-item.by-shimoji .cmt-author { color:#c0392b; }
+  .comment-item.by-editor .cmt-author { color:#5a7a9f; }
+  .comment-meta .cmt-actions { display:flex; gap:4px; }
+  .comment-meta .cmt-actions button { background:transparent; border:none; color:#888; cursor:pointer; padding:2px 5px; font-size:10px; border-radius:3px; }
+  .comment-meta .cmt-actions button:hover { background:rgba(0,0,0,0.05); color:#333; }
+  .comment-meta .cmt-actions button.resolve { color:#6a9a6a; }
+  .comment-meta .cmt-actions button.resolve.is-resolved { color:#c0392b; }
+  .comment-body { line-height:1.7; color:#1a1a2e; white-space:pre-wrap; word-wrap:break-word; }
+  .comment-item.resolved .comment-body { text-decoration:line-through; }
+
+  .comment-add { margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e0dcd4; border-radius:6px; }
+  .comment-add textarea { width:100%; border:none; outline:none; resize:vertical; min-height:50px; font-family:"Noto Sans JP",sans-serif; font-size:12.5px; line-height:1.7; color:#1a1a2e; }
+  .comment-add .cmt-add-actions { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; }
+  .comment-add button { background:#c0392b; color:#fff; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer; }
+  .comment-add button:hover { background:#a62f24; }
+  .comment-add button.cancel { background:#ccc; color:#333; }
+  .comment-add button.cancel:hover { background:#b0b0b0; }
+
+  .note-box { background:#e8eef4; border-left:4px solid #5a7a9f; border-radius:6px; padding:14px 18px; margin:18px 0; font-size:12.5px; line-height:1.8; color:#2c3e50; }
+  .note-box strong { color:#2c3e50; }
+
+  .footer { text-align:center; padding:24px; font-size:11px; color:#999; }
+
+  @media (max-width:900px) {
+    .layout { grid-template-columns:1fr; }
+    .sidebar { position:relative; top:0; width:100%; height:auto; max-height:300px; border-right:none; border-bottom:1px solid #e5e0d8; }
+    .main { grid-column:1; }
+  }
+
+  @media print {
+    .toolbar, .sidebar, .card-actions, .comment-toggle, .comments-list, #password-screen { display:none !important; }
+    .layout { grid-template-columns:1fr; padding-top:0; }
+    .main { grid-column:1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- パスワード画面 -->
+<div id="password-screen">
+  <div class="pw-box">
+    <div class="pw-encrypt-badge">🔒 AES-256 暗号化</div>
+    <h1>非公開作業スペース</h1>
+    <p>このページの内容は暗号化されています。パスワードを入力してください。</p>
+    <input type="password" id="pw-input" placeholder="パスワード" autofocus autocomplete="off" />
+    <div class="pw-error" id="pw-error"></div>
+    <button id="pw-btn" onclick="unlock()">開く</button>
+    <div class="pw-status" id="pw-status"></div>
+  </div>
+</div>
+
+<!-- 本体(復号後に注入) -->
+<div id="toolbar-container"></div>
+<div id="app-container"></div>
+<div id="notification" class="notification"></div>
+
+<!-- 暗号化されたペイロード -->
+<!-- ペイロードは payload.b64 ファイルから読み込む -->
+
+<script>
+/* ===========================
+   暗号化・復号
+   =========================== */
+const PBKDF2_ITERATIONS = 250000;
+
+function base64ToBytes(b64) {
+  const raw = atob(b64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  return await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+
+async function loadPayload() {
+  // payload.b64 を取得。キャッシュ無効化のためクエリ付き
+  const url = 'payload.b64?t=' + Date.now();
+  const resp = await fetch(url, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('payload.b64 が読み込めません (status: ' + resp.status + ')');
+  const text = await resp.text();
+  return text.trim();
+}
+
+async function decryptPayload(password, b64) {
+  const combined = base64ToBytes(b64);
+  const salt = combined.slice(0, 16);
+  const iv = combined.slice(16, 28);
+  const ciphertext = combined.slice(28);
+  const key = await deriveKey(password, salt);
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return new TextDecoder().decode(plaintext);
+}
+
+async function encryptPayload(password, plaintext) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const enc = new TextEncoder();
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    enc.encode(plaintext)
+  );
+  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+  return bytesToBase64(combined);
+}
+
+/* ===========================
+   ロック解除
+   =========================== */
+let CURRENT_PASSWORD = null; // 復号成功時に保持(同じブラウザセッション中のみメモリ上)
+
+async function unlock() {
+  const input = document.getElementById('pw-input').value;
+  const errEl = document.getElementById('pw-error');
+  const btn = document.getElementById('pw-btn');
+  const statusEl = document.getElementById('pw-status');
+  errEl.classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>復号中...';
+  statusEl.textContent = 'パスワードから鍵を導出しています';
+
+  try {
+    const b64 = await loadPayload();
+    const decrypted = await decryptPayload(input, b64);
+    CURRENT_PASSWORD = input;
+
+    // 本体を注入
+    const appContainer = document.getElementById('app-container');
+    appContainer.innerHTML = decrypted;
+
+    // ツールバーを注入
+    document.getElementById('toolbar-container').innerHTML = buildToolbarHTML();
+
+    // 復号完了を表示
+    document.getElementById('password-screen').classList.add('hidden');
+
+    // 本体の初期化
+    initApp();
+
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '開く';
+    statusEl.textContent = '';
+    errEl.textContent = 'パスワードが違います';
+    errEl.classList.add('show');
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-input').focus();
+  }
+}
+
+function buildToolbarHTML() {
+  return `
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span><span class="edit-indicator"></span>編集モード</span>
+        <span class="lock-icon">🔒 暗号化保護</span>
+        <span id="unresolved-badge" style="display:none;">未解決 <span class="comment-count" id="unresolved-count">0</span></span>
+      </div>
+      <div class="toolbar-right">
+        <select class="user-select" id="user-select" onchange="changeUser()">
+          <option value="下地">下地として投稿</option>
+          <option value="編集者">編集者として投稿</option>
+        </select>
+        <button class="secondary" onclick="addChapter()">+ 章</button>
+        <button class="secondary" onclick="addColumn()">+ コラム</button>
+        <button onclick="saveAsHTML()">HTMLとして保存</button>
+      </div>
+    </div>
+  `;
+}
+
+// Enterキー
+document.getElementById('pw-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') unlock();
+});
+
+// 防御的処理:ページ読み込み時、password-screenに不要なhiddenが
+// 付いていた場合は強制的に除去する(古い壊れたHTMLを開いた場合の救済)
+(function ensurePasswordScreenVisible() {
+  const el = document.getElementById('password-screen');
+  if (!el) return;
+  if (el.classList.contains('hidden')) {
+    el.classList.remove('hidden');
+  }
+  // inline styleのdisplayも念のためクリア
+  if (el.style.display === 'none') {
+    el.style.display = '';
+  }
+})();
+
+/* ===========================
+   アプリ本体のロジック
+   =========================== */
+function initApp() {
+  const savedUser = localStorage.getItem('active_user');
+  if (savedUser) {
+    const sel = document.getElementById('user-select');
+    if (sel) sel.value = savedUser;
+  }
+  buildSidebar();
+  updateCommentCounts();
+  setupScrollSpy();
+}
+
+function buildSidebar() {
+  const container = document.getElementById('sidebar-content');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const addItem = (card, isColumn=false) => {
+    const nav = card.getAttribute('data-nav');
+    if (!nav) return;
+    const id = card.id;
+    const item = document.createElement('div');
+    item.className = 'sidebar-item' + (isColumn ? ' column' : '');
+    item.setAttribute('data-target', id);
+    const label = document.createElement('span');
+    label.className = 'label';
+    const parts = nav.split(' ');
+    label.textContent = parts[0];
+    const ttl = document.createElement('span');
+    ttl.className = 'ttl';
+    ttl.textContent = parts.slice(1).join(' ') || '';
+    const badge = document.createElement('span');
+    badge.className = 'comment-badge';
+    badge.style.display = 'none';
+    badge.setAttribute('data-count-for', id);
+    item.appendChild(label);
+    item.appendChild(ttl);
+    item.appendChild(badge);
+    item.addEventListener('click', () => {
+      document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    container.appendChild(item);
+  };
+
+  const specSection = document.createElement('div');
+  specSection.className = 'sidebar-section';
+  specSection.textContent = 'メモ';
+  container.appendChild(specSection);
+  document.querySelectorAll('.spec-box, .toc-box').forEach(c => addItem(c, false));
+
+  const mainSection = document.createElement('div');
+  mainSection.className = 'sidebar-section';
+  mainSection.textContent = '本編';
+  container.appendChild(mainSection);
+  document.querySelectorAll('.chapter-card').forEach(c => addItem(c, false));
+
+  const colSection = document.createElement('div');
+  colSection.className = 'sidebar-section';
+  colSection.textContent = 'コラム「あわい」';
+  container.appendChild(colSection);
+  document.querySelectorAll('.column-card').forEach(c => addItem(c, true));
+}
+
+function setupScrollSpy() {
+  const items = document.querySelectorAll('.sidebar-item');
+  const cards = Array.from(items).map(i => document.getElementById(i.getAttribute('data-target'))).filter(Boolean);
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        items.forEach(i => i.classList.toggle('active', i.getAttribute('data-target') === id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px', threshold: 0 });
+  cards.forEach(c => observer.observe(c));
+}
+
+function changeUser() {
+  const u = document.getElementById('user-select').value;
+  localStorage.setItem('active_user', u);
+}
+
+function toggleComments(btn) {
+  const section = btn.closest('.comments-section');
+  const list = section.querySelector('.comments-list');
+  const isOpen = list.classList.contains('open');
+  if (isOpen) {
+    list.classList.remove('open');
+    list.innerHTML = renderCommentsList(list);
+  } else {
+    list.classList.add('open');
+    list.innerHTML = renderCommentsList(list) + renderCommentAddForm();
+  }
+}
+
+function renderCommentsList(list) {
+  return getCommentsData(list).map(renderComment).join('');
+}
+
+function getCommentsData(list) {
+  const existing = list.querySelectorAll(':scope > .comment-item');
+  const data = [];
+  existing.forEach(el => {
+    data.push({
+      id: el.getAttribute('data-cmt-id') || String(Date.now() + Math.random()),
+      author: el.getAttribute('data-author') || '不明',
+      body: el.querySelector('.comment-body')?.textContent || '',
+      resolved: el.classList.contains('resolved'),
+      ts: el.getAttribute('data-ts') || ''
+    });
+  });
+  return data;
+}
+
+function renderComment(c) {
+  const klass = c.author === '下地' ? 'by-shimoji' : (c.author === '編集者' ? 'by-editor' : '');
+  return `
+    <div class="comment-item ${klass} ${c.resolved ? 'resolved' : ''}" data-cmt-id="${c.id}" data-author="${escapeAttr(c.author)}" data-ts="${escapeAttr(c.ts)}">
+      <div class="comment-meta">
+        <span><span class="cmt-author">${escapeHtml(c.author)}</span> <span style="color:#aaa;">${escapeHtml(c.ts)}</span></span>
+        <span class="cmt-actions">
+          <button class="resolve ${c.resolved ? 'is-resolved' : ''}" onclick="toggleResolve('${c.id}', this)">${c.resolved ? '未解決に' : '解決済みに'}</button>
+          <button onclick="editComment('${c.id}', this)">編集</button>
+          <button onclick="deleteComment('${c.id}', this)">削除</button>
+        </span>
+      </div>
+      <div class="comment-body">${escapeHtml(c.body)}</div>
+    </div>
+  `;
+}
+
+function renderCommentAddForm() {
+  const u = document.getElementById('user-select')?.value || '不明';
+  return `
+    <div class="comment-add">
+      <textarea placeholder="コメントを入力(${u}として投稿)"></textarea>
+      <div class="cmt-add-actions">
+        <button class="cancel" onclick="cancelComment(this)">キャンセル</button>
+        <button onclick="submitComment(this)">投稿</button>
+      </div>
+    </div>
+  `;
+}
+
+function submitComment(btn) {
+  const addBox = btn.closest('.comment-add');
+  const textarea = addBox.querySelector('textarea');
+  const body = textarea.value.trim();
+  if (!body) return;
+  const author = document.getElementById('user-select').value;
+  const ts = formatDate(new Date());
+  const id = 'c' + Date.now() + Math.floor(Math.random() * 1000);
+  const newHtml = renderComment({ id, author, body, resolved: false, ts });
+  addBox.insertAdjacentHTML('beforebegin', newHtml);
+  textarea.value = '';
+  updateCommentCounts();
+  showNotification('コメントを投稿しました');
+}
+
+function cancelComment(btn) {
+  btn.closest('.comment-add').querySelector('textarea').value = '';
+}
+
+function deleteComment(id, btn) {
+  if (!confirm('このコメントを削除しますか?')) return;
+  btn.closest('.comment-item').remove();
+  updateCommentCounts();
+}
+
+function editComment(id, btn) {
+  const item = btn.closest('.comment-item');
+  const bodyEl = item.querySelector('.comment-body');
+  const current = bodyEl.textContent;
+  const ta = document.createElement('textarea');
+  ta.style.cssText = 'width:100%; min-height:50px; font-family:inherit; font-size:12.5px; line-height:1.7;';
+  ta.value = current;
+  bodyEl.replaceWith(ta);
+  ta.focus();
+  ta.addEventListener('blur', () => {
+    const newBody = document.createElement('div');
+    newBody.className = 'comment-body';
+    newBody.textContent = ta.value;
+    ta.replaceWith(newBody);
+  });
+}
+
+function toggleResolve(id, btn) {
+  const item = btn.closest('.comment-item');
+  item.classList.toggle('resolved');
+  btn.classList.toggle('is-resolved');
+  btn.textContent = item.classList.contains('resolved') ? '未解決に' : '解決済みに';
+  updateCommentCounts();
+}
+
+function updateCommentCounts() {
+  let total = 0, unresolved = 0;
+  document.querySelectorAll('.chapter-card, .column-card, .spec-box, .toc-box').forEach(card => {
+    const list = card.querySelector('.comments-list');
+    if (!list) return;
+    const comments = list.querySelectorAll('.comment-item');
+    const unres = list.querySelectorAll('.comment-item:not(.resolved)');
+    total += comments.length;
+    unresolved += unres.length;
+    const toggle = card.querySelector('.comment-toggle');
+    if (toggle) {
+      toggle.querySelectorAll('.cmt-count, .cmt-unresolved').forEach(e => e.remove());
+      if (comments.length > 0) {
+        toggle.classList.add('has-comments');
+        if (unres.length > 0) {
+          const ub = document.createElement('span');
+          ub.className = 'cmt-unresolved';
+          ub.textContent = unres.length + '未解決';
+          toggle.appendChild(ub);
+        } else {
+          const cb = document.createElement('span');
+          cb.className = 'cmt-count';
+          cb.textContent = comments.length;
+          toggle.appendChild(cb);
+        }
+      } else {
+        toggle.classList.remove('has-comments');
+      }
+    }
+    const sbBadge = document.querySelector(`[data-count-for="${card.id}"]`);
+    if (sbBadge) {
+      if (unres.length > 0) {
+        sbBadge.style.display = '';
+        sbBadge.textContent = unres.length;
+      } else {
+        sbBadge.style.display = 'none';
+      }
+    }
+  });
+  const toolbarBadge = document.getElementById('unresolved-badge');
+  const toolbarCount = document.getElementById('unresolved-count');
+  if (toolbarBadge && toolbarCount) {
+    if (unresolved > 0) {
+      toolbarBadge.style.display = '';
+      toolbarCount.textContent = unresolved;
+    } else {
+      toolbarBadge.style.display = 'none';
+    }
+  }
+}
+
+function deleteCard(btn) {
+  const card = btn.closest('.chapter-card, .column-card');
+  if (card && confirm('このカードを削除しますか?')) {
+    card.remove();
+    buildSidebar();
+    updateCommentCounts();
+    setupScrollSpy();
+    showNotification('削除しました');
+  }
+}
+
+function duplicateCard(btn) {
+  const card = btn.closest('.chapter-card, .column-card');
+  if (card) {
+    const clone = card.cloneNode(true);
+    clone.id = card.id + '_copy' + Date.now();
+    card.parentNode.insertBefore(clone, card.nextSibling);
+    buildSidebar();
+    updateCommentCounts();
+    setupScrollSpy();
+    showNotification('複製しました');
+  }
+}
+
+function addChapter() {
+  const container = document.querySelector('.container');
+  const sections = container.querySelectorAll('.section-title');
+  const columnSection = sections[sections.length - 1];
+  const newCard = document.createElement('div');
+  newCard.className = 'chapter-card';
+  const newId = 'card-new' + Date.now();
+  newCard.id = newId;
+  newCard.setAttribute('data-nav', '新章');
+  newCard.innerHTML = `
+    <div class="card-actions"><button class="duplicate" onclick="duplicateCard(this)" title="複製">⎘</button><button onclick="deleteCard(this)" title="削除">×</button></div>
+    <div class="chapter-header">
+      <span class="chapter-num" contenteditable="true">新章</span>
+      <span class="chapter-pages" contenteditable="true">0p</span>
+    </div>
+    <div class="chapter-title" contenteditable="true">タイトル</div>
+    <div class="chapter-subtitle" contenteditable="true">サブタイトル</div>
+    <div class="chapter-content" contenteditable="true">内容</div>
+    <div class="comments-section"><button class="comment-toggle" onclick="toggleComments(this)"><span class="cmt-icon">💬</span> コメント</button><div class="comments-list"></div></div>
+  `;
+  columnSection.parentNode.insertBefore(newCard, columnSection);
+  buildSidebar();
+  updateCommentCounts();
+  setupScrollSpy();
+  newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  showNotification('章を追加しました');
+}
+
+function addColumn() {
+  const container = document.querySelector('.container');
+  const todoCard = document.getElementById('card-todo');
+  const newCard = document.createElement('div');
+  newCard.className = 'column-card';
+  const newId = 'card-newcol' + Date.now();
+  newCard.id = newId;
+  newCard.setAttribute('data-nav', '新あわい');
+  newCard.innerHTML = `
+    <div class="card-actions"><button class="duplicate" onclick="duplicateCard(this)" title="複製">⎘</button><button onclick="deleteCard(this)" title="削除">×</button></div>
+    <div class="column-header">
+      <span class="column-label"><span class="column-num" contenteditable="true">N</span><span contenteditable="true">あわい</span></span>
+      <span class="column-pages" contenteditable="true">0p / 配置</span>
+    </div>
+    <div class="column-title" contenteditable="true">タイトル</div>
+    <div class="column-subtitle" contenteditable="true">サブタイトル</div>
+    <div class="column-content" contenteditable="true">内容</div>
+    <div class="comments-section"><button class="comment-toggle" onclick="toggleComments(this)"><span class="cmt-icon">💬</span> コメント</button><div class="comments-list"></div></div>
+  `;
+  container.insertBefore(newCard, todoCard);
+  buildSidebar();
+  updateCommentCounts();
+  setupScrollSpy();
+  newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  showNotification('コラムを追加しました');
+}
+
+/* ===========================
+   保存(再暗号化して書き出し)
+   ================================
+   方針: fetchで自分自身のHTMLソース(テンプレート)を取得し、
+   その中のペイロードだけを文字列置換する。DOMクローンは使わない。
+   これにより、開いている状態のDOM変更が保存ファイルに混入しない。
+   =========================== */
+
+async function saveAsHTML() {
+  if (!CURRENT_PASSWORD) {
+    alert('保存するにはパスワードが必要です');
+    return;
+  }
+
+  showNotification('暗号化中...');
+
+  // コメントフォームを閉じる
+  document.querySelectorAll('.comment-add').forEach(e => e.remove());
+  document.querySelectorAll('.comments-list.open').forEach(e => e.classList.remove('open'));
+
+  // 現在のDOMから本体を抽出
+  const appContainer = document.getElementById('app-container');
+  const currentBodyHTML = appContainer.innerHTML;
+
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = currentBodyHTML;
+  const sb = tempDiv.querySelector('#sidebar-content');
+  if (sb) sb.innerHTML = '';
+  tempDiv.querySelectorAll('.comments-list.open').forEach(e => e.classList.remove('open'));
+  const cleanBody = tempDiv.innerHTML;
+
+  // 再暗号化
+  const newB64 = await encryptPayload(CURRENT_PASSWORD, cleanBody);
+
+  // payload.b64 として単独ダウンロード(これをGitHubのpayload.b64に上書きアップロードする)
+  const blob = new Blob([newB64], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'payload.b64';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showNotification('payload.b64をダウンロードしました。GitHubの同名ファイルを差し替えてください。');
+}
+
+/* ===========================
+   ユーティリティ
+   =========================== */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) {
+  return String(s).replace(/"/g, '&quot;');
+}
+function formatDate(d) {
+  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+function showNotification(msg) {
+  const n = document.getElementById('notification');
+  if (!n) return;
+  n.textContent = msg;
+  n.classList.add('show');
+  setTimeout(() => n.classList.remove('show'), 2500);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && e.target.isContentEditable) {
+    e.preventDefault();
+  }
+});
+</script>
+
+</body>
+</html>
