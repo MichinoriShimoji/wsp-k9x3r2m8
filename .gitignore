@@ -3,5 +3,9 @@
 *.mp4
 *.mov
 *_plain.html
+*_plain_backup.html
+index_plain_backup.html
+encrypt.py
 decrypt.py
 reencrypt.py
+payload.b64
