@@ -1146,6 +1146,7 @@
      全体目次の並び替え (ドラッグ&ドロップ)
      =========================== */
   let _dragGroup = null;
+  let _dragEditables = null;
   function makeTocRowsDraggable() {
     document.querySelectorAll('.toc-row').forEach(row => {
       if (row.dataset.dragBound === '1') return;
@@ -1183,6 +1184,10 @@
     // 章行をドラッグ → 章＋配下コラムをグループ移動 / コラム行 → 単独移動
     _dragGroup = isColumnRow(this) ? [this] : chapterGroupOf(this);
     _dragGroup.forEach(r => r.classList.add('dragging'));
+    // contenteditable な子要素（toc-label/title/pages）がネイティブD&Dのドロップを
+    // 横取りしてしまうため、ドラッグ中だけ無効化し、dragend で元に戻す
+    _dragEditables = Array.from(document.querySelectorAll('.toc-row [contenteditable="true"]'));
+    _dragEditables.forEach(el => el.setAttribute('contenteditable', 'false'));
     try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', this.dataset.linkId || 'x'); } catch (_) {}
   }
   function onTocDragOver(e) {
@@ -1314,6 +1319,12 @@
   function onTocDragEnd() {
     if (_dragGroup) _dragGroup.forEach(r => r.classList.remove('dragging'));
     document.querySelectorAll('.toc-row').forEach(r => r.classList.remove('drop-above', 'drop-below'));
+    if (_dragEditables) {
+      // 編集モードでなければ contenteditable を復帰
+      const restore = document.body.classList.contains('editor-mode') ? 'false' : 'true';
+      _dragEditables.forEach(el => el.setAttribute('contenteditable', restore));
+      _dragEditables = null;
+    }
     _dragGroup = null;
   }
 
