@@ -1146,7 +1146,7 @@
   /* ===========================
      全体目次の並び替え (ドラッグ&ドロップ)
      =========================== */
-  let _dragRow = null;
+  let _dragGroup = null;
   function makeTocRowsDraggable() {
     document.querySelectorAll('.toc-row').forEach(row => {
       if (row.dataset.dragBound === '1') return;
@@ -1159,13 +1159,35 @@
       row.addEventListener('dragend', onTocDragEnd);
     });
   }
+  function isColumnRow(row) {
+    return !!(row && row.classList && row.classList.contains('column'));
+  }
+  // 章行（=セクション見出し）と、その直後に続くコラム行をまとめてグループ化
+  function chapterGroupOf(headRow) {
+    const group = [headRow];
+    let n = headRow.nextElementSibling;
+    while (n && n.classList && n.classList.contains('toc-row') && isColumnRow(n)) {
+      group.push(n);
+      n = n.nextElementSibling;
+    }
+    return group;
+  }
+  // コラム行が属する章（セクション）見出し行を返す
+  function owningChapterHead(row) {
+    let r = row;
+    while (r && r.classList && r.classList.contains('toc-row') && isColumnRow(r)) {
+      r = r.previousElementSibling;
+    }
+    return (r && r.classList && r.classList.contains('toc-row')) ? r : null;
+  }
   function onTocDragStart(e) {
-    _dragRow = this;
-    this.classList.add('dragging');
+    // 章行をドラッグ → 章＋配下コラムをグループ移動 / コラム行 → 単独移動
+    _dragGroup = isColumnRow(this) ? [this] : chapterGroupOf(this);
+    _dragGroup.forEach(r => r.classList.add('dragging'));
     try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', this.dataset.linkId || 'x'); } catch (_) {}
   }
   function onTocDragOver(e) {
-    if (!_dragRow || _dragRow === this) return;
+    if (!_dragGroup || _dragGroup.indexOf(this) !== -1) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const rect = this.getBoundingClientRect();
@@ -1180,16 +1202,38 @@
     e.preventDefault();
     e.stopPropagation();
     this.classList.remove('drop-above', 'drop-below');
-    if (!_dragRow || _dragRow === this) return;
+    if (!_dragGroup || _dragGroup.indexOf(this) !== -1) return;
     const rect = this.getBoundingClientRect();
     const after = e.clientY >= rect.top + rect.height / 2;
-    if (after) this.after(_dragRow); else this.before(_dragRow);
+    const draggingChapter = !isColumnRow(_dragGroup[0]);
+
+    // 挿入位置（アンカー）を決定
+    let anchor = this;
+    let place = after ? 'after' : 'before';
+    if (draggingChapter) {
+      // 章グループは別の章の途中に割り込ませず、章境界にスナップする
+      const head = isColumnRow(this) ? owningChapterHead(this) : this;
+      if (head) {
+        const g = chapterGroupOf(head);
+        if (after) { anchor = g[g.length - 1]; place = 'after'; }
+        else { anchor = head; place = 'before'; }
+      }
+    }
+    if (_dragGroup.indexOf(anchor) !== -1) return; // 自グループ上には落とさない
+
+    if (place === 'after') {
+      let ref = anchor;
+      _dragGroup.forEach(r => { ref.after(r); ref = r; });
+    } else {
+      _dragGroup.forEach(r => anchor.before(r));
+    }
+
     renumberAfterReorder();
     reorderBodyCardsToMatchToc();
     buildSidebar();
     setupScrollSpy();
     populateInsertSelects();
-    showNotification('並び替え＆番号更新しました');
+    showNotification(draggingChapter ? '章（＋コラム）を移動しました' : 'コラムを移動しました');
   }
 
   function renumberAfterReorder() {
@@ -1269,9 +1313,9 @@
     if (totalEl) totalEl.textContent = '約' + grand + 'p（本編' + chapterTotal + ' + コラム' + columnTotal + ' + 前後付' + fbN + '）';
   }
   function onTocDragEnd() {
-    if (_dragRow) _dragRow.classList.remove('dragging');
+    if (_dragGroup) _dragGroup.forEach(r => r.classList.remove('dragging'));
     document.querySelectorAll('.toc-row').forEach(r => r.classList.remove('drop-above', 'drop-below'));
-    _dragRow = null;
+    _dragGroup = null;
   }
 
   function reorderBodyCardsToMatchToc() {
