@@ -1630,6 +1630,21 @@
       e.preventDefault();
     }
   });
+
+  // TOC行の × / + ボタンのクリック委譲 (どの時点でDOMに追加されても確実に動作する)
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!t || !t.classList) return;
+    if (t.classList.contains('toc-del')) {
+      e.stopPropagation();
+      const row = t.closest('.toc-row');
+      if (row && typeof deleteTocRow === 'function') deleteTocRow(row);
+    } else if (t.classList.contains('toc-plus')) {
+      e.stopPropagation();
+      const row = t.closest('.toc-row');
+      if (row && typeof insertTocRowAfter === 'function') insertTocRowAfter(row);
+    }
+  });
 </script>
 
 
